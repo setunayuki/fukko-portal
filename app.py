@@ -9,12 +9,11 @@ SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:
 
 def get_data():
     try:
-        # 確実にCSVとして読み込み、列名の空白を自動除去
+        # header=0 を指定し、列名を自動で読み込む
         df = pd.read_csv(SHEET_URL)
-        df.columns = df.columns.str.strip()
         return df.fillna("未設定")
     except Exception as e:
-        print(f"CRITICAL ERROR: {e}")
+        print(f"ERROR: {e}")
         return None
 
 LAYOUT = """
@@ -26,7 +25,7 @@ LAYOUT = """
     <title>復興支援ポータル</title>
 </head>
 <body class="bg-slate-50 min-h-screen text-slate-800">
-    <nav class="bg-blue-700 text-white p-4 mb-6 shadow-md"><div class="max-w-md mx-auto font-bold">復興支援ポータル</div></nav>
+    <nav class="bg-blue-700 text-white p-4 mb-6 shadow-md font-bold text-center">復興支援ポータル</nav>
     <div class="max-w-md mx-auto px-4">{% block content %}{% endblock %}</div>
 </body>
 </html>
@@ -35,22 +34,19 @@ LAYOUT = """
 @app.route('/')
 def index():
     df = get_data()
+    if df is None or df.empty:
+        return "データの読み込みに失敗しました。共有設定を確認してください。"
     
-    if df is None:
-        return "【エラー】スプレッドシートにアクセスできません。共有設定が「リンクを知っている全員：編集者」になっているか確認してください。"
-    if df.empty:
-        return "【エラー】スプレッドシートのデータが空です。2行目に入力があるか確認してください。"
-    
-    # 項目名を直接指定して取得。もし名前が違ってもエラーで止まらないように保護
+    # どんな列名でも対応できるよう、左から順番にデータを取得
     row = df.iloc[0]
     shop = {
-        "name": row.get('name', '店名未設定'),
-        "image_url": row.get('image_url', ''),
-        "status": row.get('status', '不明'),
-        "message": row.get('message', ''),
-        "recommendation": row.get('recommendation', 'なし'),
-        "ec_url": row.get('ec_url', '#'),
-        "map_url": row.get('map_url', '#')
+        "name": row[1],
+        "image_url": row[2],
+        "status": row[3],
+        "message": row[4],
+        "recommendation": row[5],
+        "ec_url": row[6],
+        "map_url": row[7]
     }
     
     content = """
@@ -68,8 +64,8 @@ def index():
                 <p class="font-bold text-blue-800 mb-1">✨ おすすめ</p><p>{{ shop.recommendation }}</p>
             </div>
             <div class="grid grid-cols-2 gap-3">
-                <a href="{{ shop.map_url }}" target="_blank" class="bg-slate-100 text-center py-3 rounded-xl font-bold text-sm text-slate-700">地図</a>
-                <a href="{{ shop.ec_url }}" target="_blank" class="bg-blue-600 text-white text-center py-3 rounded-xl font-bold text-sm shadow-md">通販</a>
+                <a href="{{ shop.map_url }}" target="_blank" class="bg-slate-100 text-center py-3 rounded-xl font-bold text-sm">地図</a>
+                <a href="{{ shop.ec_url }}" target="_blank" class="bg-blue-600 text-white text-center py-3 rounded-xl font-bold text-sm">通販</a>
             </div>
         </div>
     </div>
