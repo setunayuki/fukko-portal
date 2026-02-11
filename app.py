@@ -1,19 +1,24 @@
 import pandas as pd
 from flask import Flask, render_template_string, abort
+import os
 
 app = Flask(__name__)
 
 # --- 設定：スプレッドシートの情報 ---
 SHEET_ID = "1incBINNVhc64m6oRNCIKgkhMrUOTnUUF3v5MfS8eFkg"
+# header=1 (2行目) を項目名として読み込む設定をURLに付与
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet2"
 
 def get_all_data():
     """スプレッドシートから全データを読み込む"""
     try:
-        df = pd.read_csv(SHEET_URL)
-        # 列名の前後の余計な空白を消す
+        # skiprows=1 または header=1 で、スプレッドシートの2行目をヘッダーとして読み込む
+        df = pd.read_csv(SHEET_URL, header=1)
+        
+        # 列名の空白を削除
         df.columns = df.columns.str.strip()
-        # 列名を英語からスプレッドシートの日本語名にマッピング（変換）
+        
+        # スプレッドシートの日本語名を、プログラムで使う英語名に変換
         rename_map = {
             'ID': 'id',
             '店名': 'name',
@@ -25,12 +30,17 @@ def get_all_data():
             '地図URL': 'map_url'
         }
         df = df.rename(columns=rename_map)
+        
+        # id列を文字列に変換（101などが数値として扱われないようにする）
+        if 'id' in df.columns:
+            df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False)
+            
         return df.fillna("未設定")
     except Exception as e:
-        print(f"読み込みエラー: {e}")
+        print(f"DEBUG ERROR: {e}")
         return None
 
-# --- HTML デザイン ---
+# --- HTML デザイン (変更なし) ---
 LAYOUT = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -68,7 +78,7 @@ LAYOUT = """
         </div>
         {% else %}
         <div class="text-center p-10 text-slate-500">
-            お店が見つかりませんでした。
+            データが読み込めませんでした。スプレッドシートの2行目に「ID, 店名...」があるか確認してください。
         </div>
         {% endif %}
     </div>
@@ -80,25 +90,23 @@ LAYOUT = """
 def index():
     df = get_all_data()
     if df is not None and not df.empty:
-        # 最初の行の ID を取得（列名が 'ID' または 'id' に対応）
-        first_id = df.iloc[0]['id']
-        return render_shop(first_id)
-    return "スプレッドシートのデータが見つかりません。1行目が「ID, 店名...」となっているか確認してください。"
+        return render_shop(df.iloc[0]['id'])
+    return "データが見つかりません。"
 
 @app.route('/shop/<shop_id>')
 def render_shop(shop_id):
     df = get_all_data()
-    if df is None:
-        return "データ読み込みエラー"
+    if df is None: return "データエラー"
     
-    # 文字列として比較して検索
-    row = df[df['id'].astype(str) == str(shop_id)]
+    # IDで検索
+    row = df[df['id'] == str(shop_id)]
     
     if row.empty:
-        return f"ID: {shop_id} のお店が見つかりません。", 404
+        return f"店舗ID {shop_id} は見つかりません。", 404
         
-    shop_data = row.iloc[0].to_dict()
-    return render_template_string(LAYOUT, shop=shop_data)
+    return render_template_string(LAYOUT, shop=row.iloc[0].to_dict())
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # サーバー上での実行に対応
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
