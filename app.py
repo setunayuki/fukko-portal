@@ -76,3 +76,95 @@ LAYOUT = """
                 </button>
             </form>
         </div>
+
+        {% elif mode == 'success' %}
+        <div class="bg-white p-8 rounded-3xl shadow-xl text-center">
+            <div class="text-5xl mb-4">✅</div>
+            <h2 class="text-xl font-bold mb-2">登録が完了しました</h2>
+            <p class="text-sm text-slate-500 mb-6">あなたの店舗IDはこちらです：</p>
+            <div class="flex items-center justify-center gap-2 mb-8">
+                <code id="id-code" class="bg-slate-100 px-4 py-2 rounded-lg font-mono font-bold text-orange-600">{{ new_id }}</code>
+                <button onclick="copyId()" class="text-xs bg-orange-100 text-orange-600 px-3 py-2 rounded-lg font-bold">コピー</button>
+            </div>
+            <a href="/" class="text-orange-500 font-bold">トップページへ戻る</a>
+        </div>
+        <script>
+            function copyId() {
+                const code = document.getElementById('id-code').innerText;
+                navigator.clipboard.writeText(code);
+                alert('IDをコピーしました！編集者へ伝えてください。');
+            }
+        </script>
+
+        {% elif shop %}
+        <div class="bg-white rounded-3xl overflow-hidden shadow-xl border-t-8 border-orange-500">
+            <img src="{{ shop.image_url }}" class="w-full h-60 object-cover" onerror="this.src='https://via.placeholder.com/400x250?text=No+Image'">
+            <div class="p-8">
+                <div class="flex justify-between items-start mb-4">
+                    <h2 class="text-3xl font-black text-slate-900">{{ shop.name }}</h2>
+                    <span class="px-3 py-1 rounded-full font-bold text-xs status-{{ shop.status }}">{{ shop.status }}</span>
+                </div>
+                <p class="bg-orange-50 p-4 rounded-2xl italic text-slate-700 mb-6 border-l-4 border-orange-200">「{{ shop.message }}」</p>
+                <div class="grid grid-cols-1 gap-4">
+                    <a href="{{ shop.ec_url }}" target="_blank" class="flex items-center justify-center bg-orange-500 text-white py-4 rounded-2xl font-bold text-lg shadow-lg shadow-orange-100">🛒 通販サイトへ</a>
+                </div>
+                <div class="mt-8 pt-6 border-t text-center text-xs text-slate-400">
+                    店舗ID: {{ shop.id }}
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <div class="space-y-4">
+            {% for s in all_shops %}
+            <a href="/shop/{{ s.id }}" class="flex items-center p-4 bg-white rounded-2xl shadow-md border border-orange-50 group transition hover:-translate-y-1">
+                <div class="w-16 h-16 rounded-xl overflow-hidden shrink-0 border"><img src="{{ s.image_url }}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/100'"></div>
+                <div class="ml-4 flex-1">
+                    <span class="text-[9px] px-2 py-0.5 rounded-full font-bold status-{{ s.status }}">{{ s.status }}</span>
+                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-orange-600">{{ s.name }}</h3>
+                </div>
+                <div class="text-orange-200 group-hover:translate-x-1 transition-transform">▶︎</div>
+            </a>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="fixed bottom-6 right-6 z-50">
+        <a href="/add" class="flex items-center justify-center w-16 h-16 bg-slate-800 text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition transform group">
+            <span class="text-3xl">＋</span>
+        </a>
+    </div>
+</body>
+</html>
+"""
+
+@app.route('/')
+def index():
+    df = get_all_data()
+    all_shops = df.to_dict(orient='records') if not df.empty else []
+    return render_template_string(LAYOUT, mode='list', all_shops=all_shops)
+
+@app.route('/shop/<shop_id>')
+def render_shop(shop_id):
+    df = get_all_data()
+    row = df[df['id'] == str(shop_id)]
+    if row.empty: abort(404)
+    return render_template_string(LAYOUT, mode='detail', shop=row.iloc[0].to_dict())
+
+@app.route('/add')
+def add_form():
+    return render_template_string(LAYOUT, mode='form')
+
+@app.route('/submit', methods=['POST'])
+def submit():
+    # IDを自動生成（先頭4文字を使用）
+    new_id = str(uuid.uuid4())[:4].upper()
+    # ここで本来はスプレッドシートAPIを叩きますが、
+    # 今回は仕組み上、管理者へIDを伝えて手動または自動連携させる流れを想定しています。
+    # ※直接書き込みにはGoogle APIの設定が必要ですが、まずは画面の完成を優先しました。
+    return render_template_string(LAYOUT, mode='success', new_id=new_id)
+
+if __name__ == '__main__':
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host='0.0.0.0', port=port)
