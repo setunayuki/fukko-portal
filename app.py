@@ -4,15 +4,16 @@ from flask import Flask, render_template_string
 app = Flask(__name__)
 
 # --- 設定：あなたのスプレッドシートID ---
-# ※一文字も間違っていないか再確認してください
 SHEET_ID = "1Y4o_J3SjSFaFqQadOGP5l9i1SpLoOI8c3uYmdij_TMY"
-# 確実にCSVとして、最初のシートを読み込む設定です
+# Sheet1を確実に指定し、CSV形式で読み込みます
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet1"
 
 def get_data():
     try:
-        # header=0（1行目が名前）として読み込み
+        # スプレッドシートを読み込み
         df = pd.read_csv(SHEET_URL)
+        # 列名の前後の余計な空白を消す
+        df.columns = df.columns.str.strip()
         return df.fillna("未設定")
     except Exception as e:
         print(f"ERROR: {e}")
@@ -26,7 +27,7 @@ LAYOUT = """
     <script src="https://cdn.tailwindcss.com"></script>
     <title>復興支援ポータル</title>
 </head>
-<body class="bg-slate-50 min-h-screen text-slate-800">
+<body class="bg-slate-50 min-h-screen text-slate-800 pb-10">
     <nav class="bg-blue-700 text-white p-4 mb-6 shadow-md font-bold text-center">復興支援ポータル</nav>
     <div class="max-w-md mx-auto px-4">{% block content %}{% endblock %}</div>
 </body>
@@ -37,18 +38,23 @@ LAYOUT = """
 def index():
     df = get_data()
     if df is None or df.empty:
-        return "【エラー】データの読み込みに失敗しました。スプレッドシートの「共有」設定を「編集者」にして保存したか再確認してください。"
+        return "データの読み込みに失敗しました。共有設定を確認してください。"
     
-    # 列の名前に関わらず、左から数えてデータを取得（これなら1行目が多少違っても動きます）
+    # 列の名前を直接指定して安全に取り出す設定
     row = df.iloc[0]
+    
+    # もしスプレッドシートの項目名が違っていてもエラーにならないように保護
+    def get_val(col_name):
+        return row.get(col_name, "設定なし")
+
     shop = {
-        "name": row[1] if len(row) > 1 else "店名未設定",
-        "image_url": row[2] if len(row) > 2 else "",
-        "status": row[3] if len(row) > 3 else "不明",
-        "message": row[4] if len(row) > 4 else "",
-        "recommendation": row[5] if len(row) > 5 else "なし",
-        "ec_url": row[6] if len(row) > 6 else "#",
-        "map_url": row[7] if len(row) > 7 else "#"
+        "name": get_val('name'),
+        "image_url": get_val('image_url'),
+        "status": get_val('status'),
+        "message": get_val('message'),
+        "recommendation": get_val('recommendation'),
+        "ec_url": get_val('ec_url'),
+        "map_url": get_val('map_url')
     }
     
     content = """
@@ -59,10 +65,10 @@ def index():
         <div class="p-6">
             <div class="flex justify-between items-center mb-4">
                 <h1 class="text-xl font-bold">{{ shop.name }}</h1>
-                <span class="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 font-bold">{{ shop.status }}</span>
+                <span class="text-xs px-2 py-1 rounded bg-emerald-100 text-emerald-600 font-bold border border-emerald-200">{{ shop.status }}</span>
             </div>
             <p class="text-sm text-slate-600 mb-6 leading-relaxed">{{ shop.message }}</p>
-            <div class="bg-blue-50 p-4 rounded-xl mb-6 text-xs">
+            <div class="bg-blue-50 p-4 rounded-xl mb-6 text-xs border border-blue-100">
                 <p class="font-bold text-blue-800 mb-1">✨ おすすめ</p><p>{{ shop.recommendation }}</p>
             </div>
             <div class="grid grid-cols-2 gap-3">
