@@ -11,14 +11,26 @@ def get_all_data():
     """スプレッドシートから全データを読み込む"""
     try:
         df = pd.read_csv(SHEET_URL)
+        # 列名の前後の余計な空白を消す
         df.columns = df.columns.str.strip()
+        # 列名を英語からスプレッドシートの日本語名にマッピング（変換）
+        rename_map = {
+            'ID': 'id',
+            '店名': 'name',
+            '画像URL': 'image_url',
+            '状況': 'status',
+            'メッセージ': 'message',
+            'おすすめ': 'recommendation',
+            '通販URL': 'ec_url',
+            '地図URL': 'map_url'
+        }
+        df = df.rename(columns=rename_map)
         return df.fillna("未設定")
     except Exception as e:
         print(f"読み込みエラー: {e}")
         return None
 
 # --- HTML デザイン ---
-# ここで """ を使い始めて、最後でしっかり閉じています
 LAYOUT = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -64,16 +76,14 @@ LAYOUT = """
 </html>
 """
 
-# --- ルーティング ---
-
 @app.route('/')
 def index():
     df = get_all_data()
     if df is not None and not df.empty:
-        # 1番目のデータのIDを取得して表示
+        # 最初の行の ID を取得（列名が 'ID' または 'id' に対応）
         first_id = df.iloc[0]['id']
         return render_shop(first_id)
-    return "データが見つかりません。"
+    return "スプレッドシートのデータが見つかりません。1行目が「ID, 店名...」となっているか確認してください。"
 
 @app.route('/shop/<shop_id>')
 def render_shop(shop_id):
@@ -81,11 +91,11 @@ def render_shop(shop_id):
     if df is None:
         return "データ読み込みエラー"
     
-    # IDで検索
+    # 文字列として比較して検索
     row = df[df['id'].astype(str) == str(shop_id)]
     
     if row.empty:
-        return "お店が見つかりません。", 404
+        return f"ID: {shop_id} のお店が見つかりません。", 404
         
     shop_data = row.iloc[0].to_dict()
     return render_template_string(LAYOUT, shop=shop_data)
