@@ -52,7 +52,7 @@ LAYOUT = """
 <head>
     <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
-    <title>能登復興ポータル</title>
+    <title>復興ポータル</title>
     <style>
         body { background-color: #fffaf0; }
         .st-営業中 { background-color: #dcfce7; color: #166534; }
