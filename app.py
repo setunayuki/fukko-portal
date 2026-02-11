@@ -4,39 +4,35 @@ import os
 
 app = Flask(__name__)
 
-# --- 設定：スプレッドシート情報 ---
+# --- 設定 ---
 SHEET_ID = "1incBINNVhc64m6oRNCIKgkhMrUOTnUUF3v5MfS8eFkg"
-# Sheet2を確実に指定
+# Sheet2を指定してCSV取得
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet2"
 
 def get_all_data():
     try:
-        # 1. データを読み込む（2行目をヘッダーとして扱う）
+        # ヘッダーを無視して読み込み、2行目（Index 1）を列名として強制的に割り当てる
         df = pd.read_csv(SHEET_URL, header=1)
         
-        # 2. 列名の前後の余計な空白を削除
-        df.columns = df.columns.str.strip()
+        # 列名を「名前」ではなく「順番（0, 1, 2...）」で指定して、強制的に中身を割り当てる
+        # これにより、スプレッドシートの項目名が何であっても、左から順番に読み込みます
+        df = df.iloc[:, :8] # 左から8列分を取得
+        df.columns = ['id', 'name', 'image_url', 'status', 'message', 'recommendation', 'ec_url', 'map_url']
         
-        # 3. 日本語の項目名をプログラムが理解できる英語名に変換
-        mapping = {
-            'ID': 'id', '店名': 'name', '画像URL': 'image_url',
-            '状況': 'status', 'メッセージ': 'message',
-            'おすすめ': 'recommendation', '通販URL': 'ec_url', '地図URL': 'map_url'
-        }
-        df = df.rename(columns=mapping)
-        
-        # 4. 「店名」が入っていない空の行を削除
+        # 不要な空行やタイトル行の残骸を削除
         df = df.dropna(subset=['name'])
+        df = df[df['name'] != '店名'] # 項目名行が混じっていたら削除
         
-        # 5. IDをきれいな文字列に整える（101.0 -> 101）
+        # IDをきれいな文字列にする
         df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False).str.strip()
         
         return df.fillna("未設定")
     except Exception as e:
-        print(f"DEBUG ERROR: {e}")
+        # どんなエラーが出ているかブラウザに表示させるためのデバッグ用
+        print(f"CRITICAL ERROR: {e}")
         return None
 
-# --- HTML デザイン (一覧と詳細の切り替え式) ---
+# --- HTML デザイン (変更なし) ---
 LAYOUT = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -66,10 +62,10 @@ LAYOUT = """
                     <p class="text-slate-700">{{ shop.recommendation }}</p>
                 </div>
                 <div class="grid grid-cols-2 gap-3 mb-6">
-                    <a href="{{ shop.map_url }}" target="_blank" class="bg-slate-100 text-center py-3 rounded-xl font-bold text-sm hover:bg-slate-200">地図を表示</a>
-                    <a href="{{ shop.ec_url }}" target="_blank" class="bg-blue-600 text-white text-center py-3 rounded-xl font-bold text-sm shadow-md hover:bg-blue-700">通販サイト</a>
+                    <a href="{{ shop.map_url }}" target="_blank" class="bg-slate-100 text-center py-3 rounded-xl font-bold text-sm">地図</a>
+                    <a href="{{ shop.ec_url }}" target="_blank" class="bg-blue-600 text-white text-center py-3 rounded-xl font-bold text-sm shadow-md">通販</a>
                 </div>
-                <a href="/" class="block text-center text-xs text-slate-400 hover:text-blue-600 transition">← 他のお店も見る</a>
+                <a href="/" class="block text-center text-xs text-slate-400">← 他のお店も見る</a>
             </div>
         </div>
         {% else %}
@@ -99,7 +95,7 @@ def index():
     if df is not None and not df.empty:
         all_shops = df.to_dict(orient='records')
         return render_template_string(LAYOUT, shop=None, all_shops=all_shops)
-    return "スプレッドシートを読み込めませんでした。「Sheet2」の共有設定を確認してください。"
+    return "データの読み込みに失敗しました。スプレッドシートの共有設定を確認してください。"
 
 @app.route('/shop/<shop_id>')
 def render_shop(shop_id):
@@ -110,6 +106,5 @@ def render_shop(shop_id):
     return render_template_string(LAYOUT, shop=row.iloc[0].to_dict())
 
 if __name__ == '__main__':
-    # サーバー実行用設定
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
