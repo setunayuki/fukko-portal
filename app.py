@@ -7,13 +7,13 @@ app = Flask(__name__)
 
 # --- 設定 ---
 SHEET_ID = "1incBINNVhc64m6oRNCIKgkhMrUOTnUUF3v5MfS8eFkg"
-# Sheet2を指定してCSV取得
-SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet2"
+# 読み込みを速めるため、不要なパラメータを削ったCSV用URL
+SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid=1191908203"
 
 def get_all_data():
     try:
-        # タイムアウトを防ぐため、header=1で直接読み込み
-        df = pd.read_csv(SHEET_URL, header=1)
+        # タイムアウト対策：2秒以内に読み込めない場合は諦める設定
+        df = pd.read_csv(SHEET_URL, header=1, timeout=2)
         df.columns = df.columns.str.strip()
         
         mapping = {
@@ -23,16 +23,19 @@ def get_all_data():
         }
         df = df.rename(columns=mapping)
         
-        # 店名がある行だけを抽出
-        df = df.dropna(subset=['name'])
-        df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False).str.strip()
+        # 必要な列だけに絞って軽量化
+        valid_cols = [c for c in mapping.values() if c in df.columns]
+        df = df[valid_cols].dropna(subset=['name'])
+        
+        if 'id' in df.columns:
+            df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False).str.strip()
         
         return df.fillna("未設定")
     except Exception as e:
-        print(f"Error: {e}")
-        return None
+        print(f"Read error: {e}")
+        return pd.DataFrame() # 空のデータを返してタイムアウトを防ぐ
 
-# --- HTML デザイン ---
+# --- HTML デザイン（さらに軽量化） ---
 LAYOUT = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -71,46 +74,31 @@ LAYOUT = """
         {% elif mode == 'success' %}
         <div class="bg-white p-8 rounded-3xl shadow-xl text-center">
             <h2 class="text-xl font-bold mb-4">登録を受け付けました</h2>
-            <p class="text-xs text-slate-400 mb-2">あなたの店舗ID（コピーしてください）</p>
             <div class="flex items-center justify-center gap-2 mb-6">
                 <code id="newId" class="bg-slate-100 px-4 py-2 rounded font-bold text-orange-600">{{ new_id }}</code>
                 <button onclick="copyText()" class="bg-orange-100 text-orange-600 px-3 py-2 rounded text-xs font-bold">コピー</button>
             </div>
-            <p class="text-[10px] text-slate-400 mb-6 leading-relaxed">
-                ※このIDを管理者に伝えてください。<br>スプレッドシートへの反映は管理者が行います。
-            </p>
             <a href="/" class="text-orange-500 font-bold">トップページへ</a>
         </div>
-        <script>
-            function copyText() {
-                const text = document.getElementById('newId').innerText;
-                navigator.clipboard.writeText(text);
-                alert('IDをコピーしました！');
-            }
-        </script>
+        <script>function copyText(){navigator.clipboard.writeText(document.getElementById('newId').innerText);alert('IDをコピーしました！');}</script>
         {% elif shop %}
-        <div class="bg-white rounded-3xl shadow-lg border-t-8 border-orange-500 overflow-hidden">
-            <img src="{{ shop.image_url }}" class="w-full h-56 object-cover" onerror="this.src='https://via.placeholder.com/400x250?text=No+Image'">
-            <div class="p-8 text-center">
-                <span class="inline-block px-3 py-1 rounded-full font-bold text-xs status-{{ shop.status }} mb-4">{{ shop.status }}</span>
-                <h2 class="text-3xl font-black mb-4">{{ shop.name }}</h2>
-                <p class="text-sm text-slate-600 mb-8 italic">「{{ shop.message }}」</p>
-                <a href="{{ shop.ec_url }}" target="_blank" class="block w-full py-4 bg-orange-500 text-white rounded-2xl font-bold shadow-lg">🛒 通販サイト</a>
-                <a href="/" class="block mt-6 text-xs text-slate-400">← 一覧に戻る</a>
-            </div>
+        <div class="bg-white rounded-3xl shadow-lg border-t-8 border-orange-500 overflow-hidden text-center p-8">
+            <img src="{{ shop.image_url }}" class="w-full h-56 object-cover rounded-2xl mb-4" onerror="this.src='https://via.placeholder.com/400x250?text=No+Image'">
+            <span class="inline-block px-3 py-1 rounded-full font-bold text-xs status-{{ shop.status }} mb-4">{{ shop.status }}</span>
+            <h2 class="text-3xl font-black mb-4">{{ shop.name }}</h2>
+            <p class="text-sm text-slate-600 mb-8 italic">「{{ shop.message }}」</p>
+            <a href="{{ shop.ec_url }}" target="_blank" class="block w-full py-4 bg-orange-500 text-white rounded-2xl font-bold shadow-lg">🛒 通販サイト</a>
+            <a href="/" class="block mt-6 text-xs text-slate-400">← 一覧に戻る</a>
         </div>
         {% else %}
         <div class="space-y-4">
             {% for s in all_shops %}
             <a href="/shop/{{ s.id }}" class="flex items-center p-4 bg-white rounded-2xl shadow-md border border-orange-50">
-                <div class="w-16 h-16 rounded-xl overflow-hidden shrink-0">
-                    <img src="{{ s.image_url }}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/100'">
-                </div>
+                <div class="w-16 h-16 rounded-xl overflow-hidden shrink-0"><img src="{{ s.image_url }}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/100'"></div>
                 <div class="ml-4 flex-1">
                     <span class="text-[10px] px-2 py-0.5 rounded-full font-bold status-{{ s.status }}">{{ s.status }}</span>
                     <h3 class="text-lg font-bold">{{ s.name }}</h3>
                 </div>
-                <div class="text-orange-200">▶︎</div>
             </a>
             {% endfor %}
         </div>
@@ -125,15 +113,14 @@ LAYOUT = """
 @app.route('/')
 def index():
     df = get_all_data()
-    all_shops = df.to_dict(orient='records') if df is not None else []
+    all_shops = df.to_dict(orient='records') if not df.empty else []
     return render_template_string(LAYOUT, all_shops=all_shops)
 
 @app.route('/shop/<shop_id>')
 def render_shop(shop_id):
     df = get_all_data()
-    if df is None: return "データエラー"
-    row = df[df['id'] == str(shop_id)]
-    if row.empty: return "店が見つかりません", 404
+    row = df[df['id'] == str(shop_id)] if not df.empty else pd.DataFrame()
+    if row.empty: return redirect('/')
     return render_template_string(LAYOUT, shop=row.iloc[0].to_dict())
 
 @app.route('/add')
