@@ -1,40 +1,31 @@
 import pandas as pd
-from flask import Flask, render_template_string, abort
+from flask import Flask, render_template_string, request, redirect, url_for
 import os
+import uuid # ID自動生成用
 
 app = Flask(__name__)
 
 # --- 設定 ---
-# スプレッドシートのIDと直接編集用URL
 SHEET_ID = "1incBINNVhc64m6oRNCIKgkhMrUOTnUUF3v5MfS8eFkg"
-EDIT_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=1191908203"
-# CSV取得用URL（2行目を見出しとして読み込む設定）
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet2"
 
 def get_all_data():
     try:
-        # データを読み込む
-        df = pd.read_csv(SHEET_URL)
+        df = pd.read_csv(SHEET_URL, header=1)
         df.columns = df.columns.str.strip()
-        
-        # 列名の日本語マッピング（エラー回避のため、存在を確認しながら適用）
         mapping = {
             'ID': 'id', '店名': 'name', '画像URL': 'image_url',
             '状況': 'status', 'メッセージ': 'message',
             'おすすめ': 'recommendation', '通販URL': 'ec_url', '地図URL': 'map_url'
         }
         df = df.rename(columns=mapping)
-        
-        # IDを文字列に整える（空でないものに絞る）
-        df = df.dropna(subset=['id'])
-        df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False).str.strip()
-        
+        df = df.dropna(subset=['id', 'name'])
+        df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False)
         return df.fillna("未設定")
-    except Exception as e:
-        print(f"Error reading sheet: {e}")
-        return None
+    except:
+        return pd.DataFrame()
 
-# --- HTML デザイン（温かみのあるアイボリー背景） ---
+# --- HTML デザイン ---
 LAYOUT = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -44,100 +35,44 @@ LAYOUT = """
     <script src="https://cdn.tailwindcss.com"></script>
     <title>復興支援ポータル</title>
     <style>
-        body { background-color: #fffaf0; } /* 温かみのあるベージュ */
-        .card-shadow { box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05); }
+        body { background-color: #fffaf0; font-family: 'sans-serif'; }
+        .status-営業中 { background-color: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+        .status-営業予定 { background-color: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+        .status-準備中 { background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
     </style>
 </head>
-<body class="min-h-screen text-slate-800 pb-24">
-    <nav class="bg-orange-600 text-white p-6 mb-8 shadow-lg text-center">
-        <h1 class="text-2xl font-bold tracking-widest"><a href="/">復興支援ポータル</a></h1>
-        <p class="text-xs mt-1 opacity-90">〜大切な場所を、みんなで支える〜</p>
+<body class="min-h-screen pb-24">
+    <nav class="bg-orange-600 text-white p-6 shadow-lg text-center mb-8">
+        <h1 class="text-2xl font-bold"><a href="/">復興支援ポータル</a></h1>
     </nav>
 
     <div class="max-w-md mx-auto px-4">
-        {% if shop %}
-        <div class="bg-white rounded-3xl overflow-hidden card-shadow border-t-8 border-orange-500">
-            <div class="relative">
-                <img src="{{ shop.image_url }}" class="w-full h-60 object-cover" onerror="this.src='https://images.unsplash.com/photo-1528605248644-14dd04022da1?auto=format&fit=crop&w=500&q=60'">
-                <div class="absolute top-4 right-4 px-3 py-1 bg-white/90 rounded-full text-orange-700 font-bold text-xs shadow-sm">
-                    {{ shop.status }}
+        {% if mode == 'form' %}
+        <div class="bg-white p-8 rounded-3xl shadow-xl border border-orange-100">
+            <h2 class="text-xl font-bold mb-6 text-orange-600">事業者向け：新規登録</h2>
+            <form action="/submit" method="POST" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1">店名</label>
+                    <input type="text" name="name" required class="w-full p-3 rounded-xl bg-slate-50 border focus:border-orange-500 outline-none">
                 </div>
-            </div>
-            <div class="p-8">
-                <h2 class="text-3xl font-black text-slate-900 mb-4">{{ shop.name }}</h2>
-                <div class="bg-orange-50 rounded-2xl p-4 mb-6 italic text-slate-700 leading-relaxed border-l-4 border-orange-200">
-                    「{{ shop.message }}」
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1">営業状況</label>
+                    <select name="status" class="w-full p-3 rounded-xl bg-slate-50 border">
+                        <option value="営業中">営業中</option>
+                        <option value="営業予定">営業予定</option>
+                        <option value="準備中">準備中</option>
+                    </select>
                 </div>
-                <div class="mb-8">
-                    <p class="text-[10px] font-bold text-orange-400 uppercase tracking-widest mb-1">✨ おすすめ商品</p>
-                    <p class="text-lg text-slate-800 font-bold">{{ shop.recommendation }}</p>
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1">メッセージ</label>
+                    <textarea name="message" class="w-full p-3 rounded-xl bg-slate-50 border"></textarea>
                 </div>
-                <div class="grid grid-cols-1 gap-4">
-                    <a href="{{ shop.ec_url }}" target="_blank" class="flex items-center justify-center bg-orange-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-orange-600 transition shadow-lg shadow-orange-100">
-                        🛒 通販でお買い物
-                    </a>
-                    {% if shop.map_url != '未設定' %}
-                    <a href="{{ shop.map_url }}" target="_blank" class="text-center py-2 text-sm text-slate-400 font-bold hover:text-orange-500 transition">
-                        📍 地図で場所を確認
-                    </a>
-                    {% endif %}
+                <div>
+                    <label class="block text-xs font-bold text-slate-400 mb-1">画像URL</label>
+                    <input type="url" name="image_url" class="w-full p-3 rounded-xl bg-slate-50 border">
                 </div>
-                <div class="mt-10 pt-6 border-t border-slate-50 text-center">
-                    <a href="/" class="text-slate-300 hover:text-orange-500 font-bold text-xs transition">← お店一覧に戻る</a>
-                </div>
-            </div>
+                <button type="submit" class="w-full py-4 bg-orange-500 text-white rounded-2xl font-bold shadow-lg hover:bg-orange-600 transition">
+                    この内容で登録する
+                </button>
+            </form>
         </div>
-        {% else %}
-        <div class="space-y-4">
-            <h2 class="text-center text-slate-400 font-bold text-sm tracking-widest mb-6">応援するお店を選ぶ</h2>
-            {% for s in all_shops %}
-            <a href="/shop/{{ s.id }}" class="flex items-center p-4 bg-white rounded-2xl card-shadow border border-orange-50 hover:border-orange-200 transition group">
-                <div class="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-slate-50">
-                    <img src="{{ s.image_url }}" class="w-full h-full object-cover" onerror="this.src='https://via.placeholder.com/100?text=Shop'">
-                </div>
-                <div class="ml-4 flex-1">
-                    <span class="text-[9px] font-black text-orange-400">{{ s.status }}</span>
-                    <h3 class="text-lg font-bold text-slate-800 group-hover:text-orange-600 transition">{{ s.name }}</h3>
-                </div>
-                <div class="text-orange-200 group-hover:translate-x-1 transition-transform">▶︎</div>
-            </a>
-            {% endfor %}
-            
-            {% if not all_shops %}
-            <div class="text-center py-20 bg-white/50 rounded-3xl border-2 border-dashed border-orange-100">
-                <p class="text-slate-400 font-bold text-sm">現在登録されているお店はありません</p>
-            </div>
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-
-    <div class="fixed bottom-6 right-6 z-50">
-        <a href="{{ edit_url }}" target="_blank" class="flex items-center justify-center w-14 h-14 bg-slate-800 text-white rounded-full shadow-2xl hover:scale-110 active:scale-95 transition transform group">
-            <span class="text-2xl font-light">＋</span>
-            <span class="absolute right-16 bg-slate-800 text-white text-[10px] px-3 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition whitespace-nowrap pointer-events-none">
-                事業者の方：情報を追加・修正
-            </span>
-        </a>
-    </div>
-</body>
-</html>
-"""
-
-@app.route('/')
-def index():
-    df = get_all_data()
-    all_shops = df.to_dict(orient='records') if df is not None else []
-    return render_template_string(LAYOUT, shop=None, all_shops=all_shops, edit_url=EDIT_URL)
-
-@app.route('/shop/<shop_id>')
-def render_shop(shop_id):
-    df = get_all_data()
-    if df is None: abort(500)
-    row = df[df['id'] == str(shop_id)]
-    if row.empty: abort(404)
-    return render_template_string(LAYOUT, shop=row.iloc[0].to_dict(), edit_url=EDIT_URL)
-
-if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
