@@ -6,19 +6,19 @@ app = Flask(__name__)
 
 # --- 設定：スプレッドシートの情報 ---
 SHEET_ID = "1incBINNVhc64m6oRNCIKgkhMrUOTnUUF3v5MfS8eFkg"
-# header=1 (2行目) を項目名として読み込む設定をURLに付与
+# Sheet2を指定
 SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet=Sheet2"
 
 def get_all_data():
-    """スプレッドシートから全データを読み込む"""
     try:
-        # skiprows=1 または header=1 で、スプレッドシートの2行目をヘッダーとして読み込む
-        df = pd.read_csv(SHEET_URL, header=1)
+        # 一旦ヘッダーなしで読み込んで、2行目（Index 1）を項目名としてセットする
+        raw_df = pd.read_csv(SHEET_URL, header=None)
         
-        # 列名の空白を削除
-        df.columns = df.columns.str.strip()
+        # 2行目（1行目は見出しタイトルなので飛ばす）をカラム名にする
+        df = raw_df.iloc[2:].copy()
+        df.columns = raw_df.iloc[1].str.strip()
         
-        # スプレッドシートの日本語名を、プログラムで使う英語名に変換
+        # プログラムで使いやすいように日本語名を英語名にマッピング
         rename_map = {
             'ID': 'id',
             '店名': 'name',
@@ -31,22 +31,20 @@ def get_all_data():
         }
         df = df.rename(columns=rename_map)
         
-        # id列を文字列に変換（101などが数値として扱われないようにする）
-        if 'id' in df.columns:
-            df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False)
-            
+        # ID列をきれいにする
+        df['id'] = df['id'].astype(str).str.replace('.0', '', regex=False).str.strip()
+        
         return df.fillna("未設定")
     except Exception as e:
-        print(f"DEBUG ERROR: {e}")
+        print(f"読み込みエラー発生: {e}")
         return None
 
-# --- HTML デザイン (変更なし) ---
+# --- HTML デザイン ---
 LAYOUT = """
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://cdn.tailwindcss.com"></script>
     <title>復興支援ポータル</title>
 </head>
@@ -71,14 +69,15 @@ LAYOUT = """
                     <p class="text-slate-700">{{ shop.recommendation }}</p>
                 </div>
                 <div class="grid grid-cols-2 gap-3">
-                    <a href="{{ shop.map_url }}" target="_blank" class="bg-slate-100 text-center py-3 rounded-xl font-bold text-sm">地図を表示</a>
-                    <a href="{{ shop.ec_url }}" target="_blank" class="bg-blue-600 text-white text-center py-3 rounded-xl font-bold text-sm shadow-md">通販サイト</a>
+                    <a href="{{ shop.map_url }}" target="_blank" class="bg-slate-100 text-center py-3 rounded-xl font-bold text-sm">地図</a>
+                    <a href="{{ shop.ec_url }}" target="_blank" class="bg-blue-600 text-white text-center py-3 rounded-xl font-bold text-sm shadow-md">通販</a>
                 </div>
             </div>
         </div>
         {% else %}
-        <div class="text-center p-10 text-slate-500">
-            データが読み込めませんでした。スプレッドシートの2行目に「ID, 店名...」があるか確認してください。
+        <div class="text-center p-10 bg-white rounded-xl border">
+            <p class="text-red-500 font-bold">データが見つかりません</p>
+            <p class="text-xs text-slate-400 mt-2">スプレッドシートの2行目が「ID, 店名...」になっているか確認してください。</p>
         </div>
         {% endif %}
     </div>
@@ -90,23 +89,18 @@ LAYOUT = """
 def index():
     df = get_all_data()
     if df is not None and not df.empty:
-        return render_shop(df.iloc[0]['id'])
-    return "データが見つかりません。"
+        # ループを避けるため、直接1番目のデータを表示
+        shop_data = df.iloc[0].to_dict()
+        return render_template_string(LAYOUT, shop=shop_data)
+    return "スプレッドシートが読み込めませんでした。共有設定を確認してください。"
 
 @app.route('/shop/<shop_id>')
 def render_shop(shop_id):
     df = get_all_data()
     if df is None: return "データエラー"
     
-    # IDで検索
+    # IDを検索
     row = df[df['id'] == str(shop_id)]
     
     if row.empty:
-        return f"店舗ID {shop_id} は見つかりません。", 404
-        
-    return render_template_string(LAYOUT, shop=row.iloc[0].to_dict())
-
-if __name__ == '__main__':
-    # サーバー上での実行に対応
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+        # IDが見
