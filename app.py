@@ -60,7 +60,7 @@ LAYOUT = """
     </style>
 </head>
 <body class="pb-20">
-    <nav class="bg-orange-600 text-white p-5 text-center font-bold shadow-lg">能登復興支援ポータル</nav>
+    <nav class="bg-orange-600 text-white p-5 text-center font-bold shadow-lg">復興支援ポータル</nav>
     
     <div class="flex bg-white shadow-sm mb-6">
         <a href="/?r=s" class="flex-1 py-4 text-center {{ 'text-orange-600 border-b-4 border-orange-600' if r == 's' else 'text-slate-400' }}">支援者</a>
