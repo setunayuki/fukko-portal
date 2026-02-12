@@ -24,20 +24,20 @@ def get_data():
         
         # 2. 応援コメント・おすすめ画像(Sheet3)の読み込み
         try:
-            # A列:店舗ID, B列:星評価, C列:コメント, D列:おすすめ(画像URL)
+            # A列:店舗ID, B列:星評価, C列:コメント, D列:URL(おすすめ画像)
             c_df = pd.read_csv(S3_URL, engine='c')
             c_df.columns = c_df.columns.str.strip()
-            # 列名の正規化（D列を「おすすめ」として扱う）
-            c_df.columns = ['店舗ID', '星評価', 'コメント', 'おすすめ']
+            # 送っていただいたCSVのカラム名に合わせてリネーム
+            c_df.columns = ['店舗ID', '星評価', 'コメント', 'URL']
         except:
-            c_df = pd.DataFrame(columns=['店舗ID', '星評価', 'コメント', 'おすすめ'])
+            c_df = pd.DataFrame(columns=['店舗ID', '星評価', 'コメント', 'URL'])
             
         return df.fillna("未設定"), c_df.fillna("")
     except Exception as e:
         print(f"Error: {e}")
         return pd.DataFrame(), pd.DataFrame()
 
-# --- UIデザイン ---
+# --- 支援者向けUIデザイン ---
 LAYOUT = """
 <!DOCTYPE html>
 <html lang="ja">
@@ -65,8 +65,8 @@ LAYOUT = """
     <div class="max-w-md mx-auto px-4">
         {% if r == 'o' %}
         <div class="bg-white p-8 rounded-3xl shadow-xl border-t-8 border-slate-800 text-center">
-            <h2 class="font-bold text-xl mb-4 text-slate-800 italic">事業者の方へ</h2>
-            <p class="text-sm text-slate-500 mb-8 leading-relaxed">右下の「＋」から情報を入力してください。<br>送信すると自動で反映されます。</p>
+            <h2 class="font-bold text-xl mb-4 text-slate-800">お店の掲載申請</h2>
+            <p class="text-sm text-slate-500 mb-8 leading-relaxed">右下の「＋」から情報を入力してください。<br>管理者が承認後、反映されます。</p>
         </div>
         {% elif shop %}
         <div class="bg-white rounded-3xl shadow-xl overflow-hidden border-t-8 border-orange-500 mb-8">
@@ -79,17 +79,17 @@ LAYOUT = """
                 <a href="{{ shop.ec }}" target="_blank" class="block w-full py-4 bg-orange-500 text-white rounded-2xl font-bold text-center shadow-lg mb-10 transition active:scale-95">🛒 通販サイトへ</a>
                 
                 <div class="pt-6 border-t border-slate-100">
-                    <h3 class="text-lg font-bold text-blue-600 mb-6 italic tracking-tight">📣 支援者からの応援コメント</h3>
+                    <h3 class="text-lg font-bold text-blue-600 mb-6 italic tracking-tight italic underline decoration-blue-200 decoration-4">📣 支援者からの応援コメント</h3>
                     {% if comments %}
                         {% for c in comments %}
                         <div class="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 mb-6 shadow-sm">
                             <div class="text-orange-400 text-xs mb-2 font-bold italic">評価: {{ "⭐" * c['星評価']|int }}</div>
-                            <p class="text-slate-700 text-sm leading-relaxed mb-4 font-medium">{{ c['コメント'] }}</p>
+                            <p class="text-slate-700 text-sm leading-relaxed mb-4 font-medium italic">「{{ c['コメント'] }}」</p>
                             
-                            {% if c['おすすめ'].startswith('http') %}
+                            {% if c['URL'].startswith('http') %}
                             <div class="mt-2">
                                 <p class="text-[10px] text-blue-500 font-bold mb-1 italic">✨ おすすめの風景・一品</p>
-                                <img src="{{ c['おすすめ'] }}" class="w-full h-40 object-cover rounded-xl border-2 border-white shadow-sm" alt="おすすめ">
+                                <img src="{{ c['URL'] }}" class="w-full h-44 object-cover rounded-xl border-2 border-white shadow-md" alt="応援画像">
                             </div>
                             {% endif %}
                         </div>
@@ -119,11 +119,11 @@ LAYOUT = """
     </div>
 
     {% if r == 'o' %}
-    <button onclick="document.getElementById('m').style.display='block'" class="fixed bottom-6 right-6 w-16 h-16 bg-slate-900 text-white rounded-full shadow-2xl text-4xl font-light">+</button>
+    <button onclick="document.getElementById('m').style.display='block'" class="fixed bottom-6 right-6 w-16 h-16 bg-slate-900 text-white rounded-full shadow-2xl text-4xl font-light active:scale-90 transition">+</button>
     <div id="m" class="modal">
-        <div class="m-content">
+        <div class="m-content shadow-2xl">
             <div class="flex justify-between items-center mb-6"><h3 class="text-xl font-bold">掲載情報の入力</h3><button onclick="document.getElementById('m').style.display='none'" class="text-slate-400 text-sm">Cancel</button></div>
-            <form action="{{ f_url }}" method="POST" target="_blank" onsubmit="alert('送信完了！反映まで数分お待ちください。');document.getElementById('m').style.display='none';" class="space-y-4 pb-10">
+            <form action="{{ f_url }}" method="POST" target="_blank" onsubmit="alert('送信完了！管理者の確認をお待ちください。');document.getElementById('m').style.display='none';" class="space-y-4 pb-10">
                 <input type="text" name="entry.1643444005" placeholder="店名 *" required class="w-full p-4 rounded-2xl bg-slate-50 border outline-none focus:border-orange-500">
                 <select name="entry.198308709" class="w-full p-4 rounded-2xl bg-slate-50 border font-bold">
                     <option value="営業中">営業中</option>
@@ -131,7 +131,7 @@ LAYOUT = """
                 </select>
                 <textarea name="entry.1448093113" placeholder="メッセージ" class="w-full p-4 rounded-2xl bg-slate-50 border h-28 outline-none focus:border-orange-500"></textarea>
                 <input type="url" name="entry.669818856" placeholder="画像URL" class="w-full p-4 rounded-2xl bg-slate-50 border outline-none">
-                <button type="submit" class="w-full py-5 bg-slate-800 text-white rounded-2xl font-bold text-lg shadow-xl active:scale-95 transition">情報を送信して公開</button>
+                <button type="submit" class="w-full py-5 bg-slate-800 text-white rounded-2xl font-bold text-lg shadow-xl transition active:scale-95">情報を送信する</button>
             </form>
         </div>
     </div>
@@ -154,7 +154,7 @@ def shop(sid):
     row = df[df['id'] == str(sid)]
     if row.empty: return "店舗が見つかりません", 404
     
-    # この店舗ID(sid)に一致するSheet3のデータを取得
+    # 店舗IDに一致する応援コメントをSheet3から抽出
     cms = c_df[c_df['店舗ID'].astype(str) == str(sid)].to_dict(orient='records')
     
     return render_template_string(LAYOUT, r=r, shop=row.iloc[0].to_dict(), comments=cms)
